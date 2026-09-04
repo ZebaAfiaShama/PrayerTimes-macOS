@@ -1,0 +1,6 @@
+.DS_Store
+build_cache/
+PrayerTimes.app/
+main
+test_icon.swift
+*.swp
