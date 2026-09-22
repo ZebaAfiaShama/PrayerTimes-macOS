@@ -38,7 +38,20 @@ public final class PrayerStore: ObservableObject {
     @Published public var processedMissedToday: [PrayerType: Bool] = [:]
     @Published public var notifiedStartedToday: [PrayerType: Bool] = [:]
 
-    // Settings
+    // Period / Haidh Exemption Mode
+    @Published public var isPeriodModeActive: Bool {
+        didSet {
+            defaults.set(isPeriodModeActive, forKey: "isPeriodModeActive")
+        }
+    }
+    @Published public var periodStartDate: Date? {
+        didSet {
+            defaults.set(periodStartDate, forKey: "periodStartDate")
+        }
+    }
+
+    // Settings & UI state
+    @Published public var showingSettings: Bool = false
     @Published public var asrMethod: AsrMethod {
         didSet {
             defaults.set(asrMethod.rawValue, forKey: "asrMethod")
@@ -94,6 +107,10 @@ public final class PrayerStore: ObservableObject {
         }
         self.menuBarIconStyle = initialIconStyle
 
+        // Load Period Mode State
+        self.isPeriodModeActive = defaults.bool(forKey: "isPeriodModeActive")
+        self.periodStartDate = defaults.object(forKey: "periodStartDate") as? Date
+
         // Load cached location or default to Dhaka
         let cachedLat = defaults.double(forKey: "lastLatitude")
         let cachedLon = defaults.double(forKey: "lastLongitude")
@@ -115,6 +132,30 @@ public final class PrayerStore: ObservableObject {
 
         loadDailyState()
         loadKazaCounts()
+    }
+
+    public func setPeriodMode(enabled: Bool) {
+        isPeriodModeActive = enabled
+        if enabled {
+            if periodStartDate == nil {
+                periodStartDate = Date()
+            }
+        } else {
+            periodStartDate = nil
+        }
+    }
+
+    public func togglePeriodMode() {
+        setPeriodMode(enabled: !isPeriodModeActive)
+    }
+
+    public var periodDaysActive: Int {
+        guard let start = periodStartDate else { return 1 }
+        let calendar = Calendar.current
+        let startDay = calendar.startOfDay(for: start)
+        let currentDay = calendar.startOfDay(for: Date())
+        let diff = calendar.dateComponents([.day], from: startDay, to: currentDay).day ?? 0
+        return max(1, diff + 1)
     }
 
     public func onLocationUpdated(latitude: Double, longitude: Double, cityName: String, countryName: String) {
@@ -290,13 +331,16 @@ public final class PrayerStore: ObservableObject {
                     notifiedStartedToday[prayer] = true
                     saveDailyFlags()
 
-                    let timeStr = timeFormatter.string(from: startTime)
-                    notifications.sendNotification(
-                        title: "🕌 \(prayer.rawValue) Waqt Started",
-                        subtitle: "\(cityName), \(countryName)",
-                        body: "It is now \(prayer.rawValue) time (\(timeStr)). Have you prepared for namaz?",
-                        identifier: "start_\(prayer.rawValue)_\(today)"
-                    )
+                    // If Period Mode is active, silence waqt start alerts (user requested)
+                    if !isPeriodModeActive {
+                        let timeStr = timeFormatter.string(from: startTime)
+                        notifications.sendNotification(
+                            title: "🕌 \(prayer.rawValue) Waqt Started",
+                            subtitle: "\(cityName), \(countryName)",
+                            body: "It is now \(prayer.rawValue) time (\(timeStr)). Have you prepared for namaz?",
+                            identifier: "start_\(prayer.rawValue)_\(today)"
+                        )
+                    }
                 }
             }
         }
@@ -311,29 +355,44 @@ public final class PrayerStore: ObservableObject {
 
                 if !isCompleted && !alreadyProcessed {
                     processedMissedToday[prayer] = true
-                    let currentKaza = kazaCounts[prayer] ?? 0
-                    kazaCounts[prayer] = currentKaza + 1
-                    saveKazaCounts()
-                    saveDailyFlags()
 
-                    notifications.sendNotification(
-                        title: "⚠️ Missed Prayer Reminder",
-                        subtitle: "\(prayer.rawValue) Waqt has ended",
-                        body: "You have missed \(prayer.rawValue) prayer. Mark it if completed or pray the kaza namaz.",
-                        identifier: "missed_\(prayer.rawValue)_\(today)"
-                    )
+                    // If Period Mode is active, prayers are exempted: NO KAZA & NO MISSED NOTIFICATION
+                    if !isPeriodModeActive {
+                        let currentKaza = kazaCounts[prayer] ?? 0
+                        kazaCounts[prayer] = currentKaza + 1
+                        saveKazaCounts()
+                        saveDailyFlags()
+
+                        notifications.sendNotification(
+                            title: "⚠️ Missed Prayer Reminder",
+                            subtitle: "\(prayer.rawValue) Waqt has ended",
+                            body: "You have missed \(prayer.rawValue) prayer. Mark it if completed or pray the kaza namaz.",
+                            identifier: "missed_\(prayer.rawValue)_\(today)"
+                        )
+                    } else {
+                        saveDailyFlags()
+                    }
                 }
             }
         }
     }
 
     public func triggerTestMissedNotification() {
-        notifications.sendNotification(
-            title: "⚠️ Missed Prayer Reminder",
-            subtitle: "Dhuhr Waqt has ended",
-            body: "You have missed Dhuhr prayer. Mark it if completed or pray the kaza namaz.",
-            identifier: "test_missed_\(UUID().uuidString)"
-        )
+        if isPeriodModeActive {
+            notifications.sendNotification(
+                title: "🌸 Period Mode Active",
+                subtitle: "Kaza Exemption",
+                body: "Missed prayer alerts and Kaza counters are paused while Period Mode is enabled.",
+                identifier: "test_missed_\(UUID().uuidString)"
+            )
+        } else {
+            notifications.sendNotification(
+                title: "⚠️ Missed Prayer Reminder",
+                subtitle: "Dhuhr Waqt has ended",
+                body: "You have missed Dhuhr prayer. Mark it if completed or pray the kaza namaz.",
+                identifier: "test_missed_\(UUID().uuidString)"
+            )
+        }
     }
 
     public func triggerTestStartNotification() {

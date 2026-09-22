@@ -4,7 +4,6 @@ public struct PopoverView: View {
     @ObservedObject var store: PrayerStore = PrayerStore.shared
     @ObservedObject var locationMgr: LocationManager = LocationManager.shared
     @ObservedObject var launchHelper: LaunchAtLoginHelper = LaunchAtLoginHelper.shared
-    @State private var showingSettings: Bool = false
 
     private var timeFormatter: DateFormatter {
         let f = DateFormatter()
@@ -39,7 +38,7 @@ public struct PopoverView: View {
                     kazaTrackerCard
 
                     // MARK: - Settings Section (Collapsible)
-                    if showingSettings {
+                    if store.showingSettings {
                         settingsCard
                     }
                 }
@@ -87,11 +86,11 @@ public struct PopoverView: View {
             Spacer()
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    showingSettings.toggle()
+                    store.showingSettings.toggle()
                 }
             }) {
-                Image(systemName: showingSettings ? "gearshape.fill" : "gearshape")
-                    .foregroundColor(showingSettings ? .blue : .secondary)
+                Image(systemName: store.showingSettings ? "gearshape.fill" : "gearshape")
+                    .foregroundColor(store.showingSettings ? .blue : .secondary)
                     .font(.system(size: 14))
             }
             .buttonStyle(BorderlessButtonStyle())
@@ -107,7 +106,15 @@ public struct PopoverView: View {
         let state = store.waqtState
         return VStack(spacing: 8) {
             HStack {
-                if let active = state.activePrayer {
+                if store.isPeriodModeActive {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .foregroundColor(.pink)
+                        Text("Period Mode • Prayers Exempted")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.pink)
+                    }
+                } else if let active = state.activePrayer {
                     HStack(spacing: 6) {
                         Image(systemName: active.iconName)
                             .foregroundColor(.green)
@@ -160,7 +167,7 @@ public struct PopoverView: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(
                             LinearGradient(
-                                colors: [.green, .mint],
+                                colors: store.isPeriodModeActive ? [.pink, .purple] : [.green, .mint],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -187,9 +194,15 @@ public struct PopoverView: View {
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
                 Spacer()
-                Text("Check if completed")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                if store.isPeriodModeActive {
+                    Text("Exempt from prayer")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.pink)
+                } else {
+                    Text("Check if completed")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
             }
 
             VStack(spacing: 6) {
@@ -247,7 +260,7 @@ public struct PopoverView: View {
             // Icon & Name
             HStack(spacing: 8) {
                 Image(systemName: prayer.iconName)
-                    .foregroundColor(isActive ? .green : (isCompleted ? .secondary : .primary))
+                    .foregroundColor(store.isPeriodModeActive ? .pink.opacity(0.7) : (isActive ? .green : (isCompleted ? .secondary : .primary)))
                     .frame(width: 18)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -266,8 +279,16 @@ public struct PopoverView: View {
 
             Spacer()
 
-            // Active Badge
-            if isActive {
+            // Status Badge
+            if store.isPeriodModeActive {
+                Text("EXEMPT")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.pink)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.pink.opacity(0.12))
+                    .cornerRadius(4)
+            } else if isActive {
                 Text("NOW")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.white)
@@ -285,29 +306,44 @@ public struct PopoverView: View {
                     .cornerRadius(4)
             }
 
-            // Checkbox
-            Button(action: {
-                store.togglePrayer(prayer)
-            }) {
+            // Checkbox / Exemption indicator
+            if store.isPeriodModeActive {
                 HStack(spacing: 4) {
-                    Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16))
-                        .foregroundColor(isCompleted ? .green : .gray)
-                    Text(isCompleted ? "Prayed" : "Pray")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(isCompleted ? .green : .secondary)
+                    Image(systemName: "minus.circle")
+                        .font(.system(size: 14))
+                        .foregroundColor(.pink.opacity(0.6))
+                    Text("No Kaza")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.pink.opacity(0.8))
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(isCompleted ? Color.green.opacity(0.1) : Color.gray.opacity(0.08))
+                .background(Color.pink.opacity(0.06))
                 .cornerRadius(6)
+            } else {
+                Button(action: {
+                    store.togglePrayer(prayer)
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 16))
+                            .foregroundColor(isCompleted ? .green : .gray)
+                        Text(isCompleted ? "Prayed" : "Pray")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(isCompleted ? .green : .secondary)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(isCompleted ? Color.green.opacity(0.1) : Color.gray.opacity(0.08))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help(isCompleted ? "Mark as not prayed" : "Mark as prayed today")
             }
-            .buttonStyle(PlainButtonStyle())
-            .help(isCompleted ? "Mark as not prayed" : "Mark as prayed today")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(isActive ? Color.green.opacity(0.07) : Color.clear)
+        .background(isActive && !store.isPeriodModeActive ? Color.green.opacity(0.07) : Color.clear)
         .cornerRadius(6)
     }
 
@@ -327,7 +363,15 @@ public struct PopoverView: View {
 
                 Spacer()
 
-                if store.totalKaza > 0 {
+                if store.isPeriodModeActive {
+                    Text("PAUSED (PERIOD)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.pink)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.pink.opacity(0.12))
+                        .cornerRadius(4)
+                } else if store.totalKaza > 0 {
                     Text("\(store.totalKaza) Missed")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.red)
@@ -342,9 +386,46 @@ public struct PopoverView: View {
                 }
             }
 
-            Text("Auto-increments when a waqt ends without being marked. Decrement when you pray a Kaza.")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+            // Period Mode Active Banner OR Toggle Button
+            if store.isPeriodModeActive {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        HStack(spacing: 5) {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(.pink)
+                                .font(.system(size: 11))
+                            Text("Period Mode Active (Day \(store.periodDaysActive))")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.pink)
+                        }
+                        Spacer()
+                        Button(action: {
+                            store.setPeriodMode(enabled: false)
+                        }) {
+                            Text("End Period")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.pink)
+                                .cornerRadius(4)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .help("Resume normal prayer tracking & Kaza")
+                    }
+                    Text("In Islam, women are exempted from prayer during menstruation and these prayers are forgiven with no Kaza. Alerts and missed counts are paused.")
+                        .font(.system(size: 9.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(8)
+                .background(Color.pink.opacity(0.08))
+                .cornerRadius(6)
+            } else {
+                Text("Auto-increments when a waqt ends without being marked. Decrement when you pray a Kaza.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
 
             // Grid of 5 prayers
             HStack(spacing: 6) {
@@ -388,6 +469,35 @@ public struct PopoverView: View {
                     .cornerRadius(6)
                 }
             }
+
+            // Inactive Period Mode quick button
+            if !store.isPeriodModeActive {
+                HStack {
+                    HStack(spacing: 5) {
+                        Image(systemName: "heart.fill")
+                            .foregroundColor(.pink.opacity(0.7))
+                            .font(.system(size: 10))
+                        Text("Women's Exemption (Period Mode)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: {
+                        store.setPeriodMode(enabled: true)
+                    }) {
+                        Text("Start Period Mode")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.pink)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.pink.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .help("Pause Kaza namaz tracking and alerts during menstruation")
+                }
+                .padding(.top, 2)
+            }
         }
         .padding(12)
         .background(
@@ -403,6 +513,25 @@ public struct PopoverView: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(.secondary)
                 .textCase(.uppercase)
+
+            // Period Mode Toggle
+            HStack {
+                HStack(spacing: 4) {
+                    Image(systemName: "heart.fill")
+                        .foregroundColor(.pink)
+                        .font(.system(size: 11))
+                    Text("Period Mode (Haidh Exemption):")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { store.isPeriodModeActive },
+                    set: { store.setPeriodMode(enabled: $0) }
+                ))
+                .toggleStyle(SwitchToggleStyle())
+            }
+
+            Divider()
 
             // Launch at Startup
             HStack {
